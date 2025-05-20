@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swiftscale Pin Resizer</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+  <style>
+    .dropzone { border: 2px dashed #4F46E5; border-radius: 1rem; }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+  <h1 class="text-3xl font-bold mb-4">Swiftscale Bulk Pin Resizer</h1>
+
+  <!-- Drop zone -->
+  <div id="dropzone" class="dropzone w-full max-w-xl h-60 flex flex-col items-center justify-center bg-white cursor-pointer">
+    <p class="text-lg text-gray-600">Drag & drop images here, or click to select.</p>
+    <input id="fileInput" type="file" accept="image/*" multiple class="hidden" />
+  </div>
+
+  <!-- Watermark toggle -->
+  <label class="mt-4 flex items-center space-x-2">
+    <input type="checkbox" id="watermark" checked class="h-4 w-4 text-indigo-600" />
+    <span class="text-gray-700">Include "Swiftscale" watermark</span>
+  </label>
+
+  <!-- Upload button -->
+  <button id="uploadBtn" class="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-lg disabled:opacity-50" disabled>
+    Resize & Download ZIP
+  </button>
+
+  <!-- Progress + status -->
+  <div id="progressBar" class="w-full max-w-xl bg-gray-200 h-2 rounded mt-4 hidden">
+    <div id="progressFill" class="bg-indigo-600 h-full rounded" style="width: 0%"></div>
+  </div>
+  <div id="status" class="mt-3 text-gray-700"></div>
+
+  <script>
+    /* --------------------- CONFIG --------------------- */
+    // Change to your deployed backend URL when hosting
+    const BACKEND_URL = "http://127.0.0.1:8000/resize";
+
+    /* --------------------- Elements ------------------- */
+    const dropzone   = document.getElementById('dropzone');
+    const fileInput  = document.getElementById('fileInput');
+    const uploadBtn  = document.getElementById('uploadBtn');
+    const statusBox  = document.getElementById('status');
+    const progressEl = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
+
+    let files = [];
+
+    const updateButton = () => {
+      uploadBtn.disabled = files.length === 0;
+      uploadBtn.textContent = files.length ? `Resize ${files.length} image${files.length>1?'s':''}` : 'Resize & Download ZIP';
+    };
+
+    /* ------------------ Drag & Drop ------------------- */
+    dropzone.addEventListener('click', () => fileInput.click());
+
+    const handleFiles = fileList => {
+      for (const file of fileList) {
+        if (file.type.startsWith('image/')) files.push(file);
+      }
+      statusBox.textContent = `${files.length} image${files.length!==1?'s':''} ready.`;
+      updateButton();
+    };
+
+    ['dragover','dragenter'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('bg-indigo-50'); }));
+    ;['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, () => dropzone.classList.remove('bg-indigo-50')));
+    dropzone.addEventListener('drop', e => { e.preventDefault(); handleFiles(e.dataTransfer.files); });
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+    /* -------------------- Upload ---------------------- */
+    uploadBtn.addEventListener('click', async () => {
+      const form = new FormData();
+      files.forEach(f => form.append('files', f));
+      const includeWm = document.getElementById('watermark').checked ? 'yes' : 'no';
+      form.append('watermark', includeWm);
+
+      // Reset progress bar
+      progressFill.style.width = '0%';
+      progressEl.classList.remove('hidden');
+
+      statusBox.textContent = 'Uploading & processing…';
+      uploadBtn.disabled = true;
+
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', BACKEND_URL, true);
+
+        xhr.upload.onprogress = e => {
+          if (e.lengthComputable) {
+            const percent = (e.loaded / e.total) * 100;
+            progressFill.style.width = percent.toFixed(1) + '%';
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            const blob = xhr.response;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'swiftscale_resized.zip';
+            a.click();
+            statusBox.textContent = 'Download ready!';
+            files = [];
+            updateButton();
+          } else {
+            statusBox.textContent = 'Server error: ' + xhr.status;
+          }
+          uploadBtn.disabled = false;
+          progressEl.classList.add('hidden');
+        };
+
+        xhr.onerror = () => {
+          statusBox.textContent = 'Network error.';
+          uploadBtn.disabled = false;
+          progressEl.classList.add('hidden');
+        };
+
+        xhr.responseType = 'blob';
+        xhr.send(form);
+      } catch (err) {
+        statusBox.textContent = 'Error: ' + err.message;
+        uploadBtn.disabled = false;
+        progressEl.classList.add('hidden');
+      }
+    });
+  </script>
+</body>
+</html>
